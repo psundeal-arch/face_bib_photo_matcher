@@ -32,5 +32,5 @@ website:
     "2026 Boston Marathon": reports_2026_boston_marathon
   default_race: "2026 SU Mother's Day 5k"
   insightface_det_size: 640
-  max_results: 30
+  max_results: 999
   default_embedding_threshold: 1.0

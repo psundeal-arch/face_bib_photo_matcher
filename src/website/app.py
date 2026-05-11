@@ -5,17 +5,24 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import os
+import re
 import sys
+import tempfile
 import threading
+import time
+import uuid
+import zipfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 import cv2
 import numpy as np
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_file
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app_config import get_section, load_yaml_config
@@ -37,6 +44,9 @@ _face_app_lock = threading.Lock()
 _face_app: Optional[object] = None
 _report_cache_lock = threading.Lock()
 _report_cache: Dict[str, Dict[str, Any]] = {}
+_download_jobs_lock = threading.Lock()
+_download_jobs: Dict[str, Dict[str, Any]] = {}
+DOWNLOAD_JOB_TTL_SECONDS = 60 * 60
 
 
 def _load_website_config() -> Dict[str, Any]:
@@ -493,6 +503,217 @@ def decode_uploaded_image(file_storage: Any) -> np.ndarray:
     return image
 
 
+def sanitize_zip_entry_name(image_name: Any, index: int, used_names: set[str]) -> str:
+    raw_name = str(image_name).strip() if isinstance(image_name, str) else ""
+    file_name = Path(raw_name).name if raw_name else ""
+    if not file_name:
+        file_name = f"photo_{index:03d}.jpg"
+
+    # Strip path traversal and normalize whitespace for a safer ZIP entry name.
+    file_name = file_name.replace("\\", "_").replace("/", "_")
+    file_name = re.sub(r"\s+", " ", file_name).strip()
+    if not file_name:
+        file_name = f"photo_{index:03d}.jpg"
+
+    stem = Path(file_name).stem or f"photo_{index:03d}"
+    suffix = Path(file_name).suffix
+    candidate = f"{stem}{suffix}"
+    dedupe_idx = 2
+    while candidate in used_names:
+        candidate = f"{stem}_{dedupe_idx}{suffix}"
+        dedupe_idx += 1
+    used_names.add(candidate)
+    return candidate
+
+
+def download_url_bytes(url: str, timeout_seconds: int = 20) -> bytes:
+    req = Request(url, headers={"User-Agent": "face-bib-photo-matcher/1.0"})
+    with urlopen(req, timeout=timeout_seconds) as resp:  # nosec B310
+        return bytes(resp.read())
+
+
+def parse_match_images_json(raw_items: str) -> tuple[Optional[List[Dict[str, Any]]], Optional[str], int]:
+    raw = raw_items.strip()
+    if not raw:
+        return None, "match_images_json is required", 400
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None, "match_images_json must be valid JSON", 400
+    if not isinstance(parsed, list):
+        return None, "match_images_json must be a JSON list", 400
+    normalized: List[Dict[str, Any]] = []
+    for item in parsed:
+        if isinstance(item, dict):
+            normalized.append(item)
+    return normalized, None, 200
+
+
+def build_download_report_text(downloaded_count: int, failed_items: List[Dict[str, str]]) -> str:
+    lines = [
+        "Some photos could not be added to this ZIP.",
+        "",
+        f"Downloaded: {downloaded_count}",
+        f"Failed: {len(failed_items)}",
+        "",
+        "Failures:",
+    ]
+    for i, failed in enumerate(failed_items, start=1):
+        lines.append(f"{i}. image_name: {failed['image_name']}")
+        lines.append(f"   download_url: {failed['download_url'] or '(missing)'}")
+        lines.append(f"   error: {failed['error']}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def build_zip_from_match_items(
+    match_items: List[Dict[str, Any]],
+    zf: zipfile.ZipFile,
+    progress_callback: Optional[Callable[[int, int, int], None]] = None,
+) -> tuple[int, List[Dict[str, str]]]:
+    downloaded_count = 0
+    failed_items: List[Dict[str, str]] = []
+    used_names: set[str] = set()
+
+    for idx, item in enumerate(match_items, start=1):
+        download_url = item.get("download_url")
+        if not isinstance(download_url, str) or not download_url.strip():
+            failed_items.append(
+                {
+                    "image_name": str(item.get("image_name") or f"photo_{idx:03d}.jpg"),
+                    "download_url": "",
+                    "error": "missing download_url",
+                }
+            )
+            if progress_callback is not None:
+                progress_callback(idx, downloaded_count, len(failed_items))
+            continue
+
+        try:
+            content = download_url_bytes(download_url.strip())
+        except Exception as exc:
+            failed_items.append(
+                {
+                    "image_name": str(item.get("image_name") or f"photo_{idx:03d}.jpg"),
+                    "download_url": download_url.strip(),
+                    "error": str(exc),
+                }
+            )
+            if progress_callback is not None:
+                progress_callback(idx, downloaded_count, len(failed_items))
+            continue
+
+        entry_name = sanitize_zip_entry_name(item.get("image_name"), idx, used_names)
+        zf.writestr(entry_name, content)
+        downloaded_count += 1
+        if progress_callback is not None:
+            progress_callback(idx, downloaded_count, len(failed_items))
+
+    if failed_items:
+        zf.writestr("_download_report.txt", build_download_report_text(downloaded_count, failed_items))
+    return downloaded_count, failed_items
+
+
+def cleanup_download_jobs() -> None:
+    now = time.time()
+    to_remove: List[str] = []
+    with _download_jobs_lock:
+        for job_id, job in _download_jobs.items():
+            updated_at = float(job.get("updated_at", job.get("created_at", now)))
+            if now - updated_at < DOWNLOAD_JOB_TTL_SECONDS:
+                continue
+            zip_path = job.get("zip_path")
+            if isinstance(zip_path, str) and zip_path:
+                try:
+                    Path(zip_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
+            to_remove.append(job_id)
+        for job_id in to_remove:
+            _download_jobs.pop(job_id, None)
+
+
+def run_download_zip_job(job_id: str, match_items: List[Dict[str, Any]], zip_path: Path) -> None:
+    with _download_jobs_lock:
+        job = _download_jobs.get(job_id)
+        if job is None:
+            return
+        job["status"] = "running"
+        job["updated_at"] = time.time()
+
+    def on_progress(processed: int, downloaded: int, failed: int) -> None:
+        with _download_jobs_lock:
+            job2 = _download_jobs.get(job_id)
+            if job2 is None:
+                return
+            job2["processed"] = processed
+            job2["downloaded"] = downloaded
+            job2["failed"] = failed
+            job2["updated_at"] = time.time()
+
+    try:
+        with zipfile.ZipFile(zip_path, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+            downloaded_count, failed_items = build_zip_from_match_items(match_items, zf, progress_callback=on_progress)
+
+        if downloaded_count == 0:
+            try:
+                zip_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            with _download_jobs_lock:
+                job3 = _download_jobs.get(job_id)
+                if job3 is not None:
+                    job3["status"] = "failed"
+                    job3["error"] = "Unable to download any images for ZIP export."
+                    job3["failed_items"] = failed_items
+                    job3["updated_at"] = time.time()
+            return
+
+        with _download_jobs_lock:
+            job4 = _download_jobs.get(job_id)
+            if job4 is not None:
+                job4["status"] = "completed"
+                job4["processed"] = len(match_items)
+                job4["downloaded"] = downloaded_count
+                job4["failed"] = len(failed_items)
+                job4["zip_path"] = str(zip_path)
+                job4["updated_at"] = time.time()
+    except Exception as exc:
+        try:
+            zip_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        with _download_jobs_lock:
+            job5 = _download_jobs.get(job_id)
+            if job5 is not None:
+                job5["status"] = "failed"
+                job5["error"] = str(exc)
+                job5["updated_at"] = time.time()
+
+
+def create_download_zip_job(match_items: List[Dict[str, Any]]) -> str:
+    cleanup_download_jobs()
+    job_id = uuid.uuid4().hex
+    zip_path = Path(tempfile.gettempdir()) / f"matched_photos_{job_id}.zip"
+    now = time.time()
+    with _download_jobs_lock:
+        _download_jobs[job_id] = {
+            "job_id": job_id,
+            "status": "queued",
+            "created_at": now,
+            "updated_at": now,
+            "total": len(match_items),
+            "processed": 0,
+            "downloaded": 0,
+            "failed": 0,
+            "zip_path": "",
+            "error": "",
+        }
+    t = threading.Thread(target=run_download_zip_job, args=(job_id, match_items, zip_path), daemon=True)
+    t.start()
+    return job_id
+
+
 @app.get("/")
 def index() -> Any:
     race_map, default_race = load_race_reports_config()
@@ -597,6 +818,83 @@ def api_match() -> Any:
 def results_page() -> Any:
     payload, error, status = build_match_payload_from_request()
     return render_template("results.html", payload=payload, error=error, status_code=status), status
+
+
+@app.post("/download-zip/start")
+@app.post("/results/download-zip/start")
+def download_zip_start() -> Any:
+    match_items, error, status = parse_match_images_json(request.form.get("match_images_json", ""))
+    if error is not None or match_items is None:
+        return jsonify({"error": error}), status
+    job_id = create_download_zip_job(match_items)
+    return jsonify({"job_id": job_id}), 202
+
+
+@app.get("/download-zip/status/<job_id>")
+@app.get("/results/download-zip/status/<job_id>")
+def download_zip_status(job_id: str) -> Any:
+    cleanup_download_jobs()
+    with _download_jobs_lock:
+        job = _download_jobs.get(job_id)
+        if job is None:
+            return jsonify({"error": "job not found or expired"}), 404
+        return jsonify(
+            {
+                "job_id": job["job_id"],
+                "status": job["status"],
+                "total": int(job.get("total", 0)),
+                "processed": int(job.get("processed", 0)),
+                "downloaded": int(job.get("downloaded", 0)),
+                "failed": int(job.get("failed", 0)),
+                "error": str(job.get("error", "")),
+            }
+        )
+
+
+@app.get("/download-zip/file/<job_id>")
+@app.get("/results/download-zip/file/<job_id>")
+def download_zip_file(job_id: str) -> Any:
+    cleanup_download_jobs()
+    with _download_jobs_lock:
+        job = _download_jobs.get(job_id)
+        if job is None:
+            return "job not found or expired", 404
+        status = str(job.get("status", ""))
+        zip_path_text = str(job.get("zip_path", ""))
+        if status != "completed":
+            return "zip is not ready yet", 409
+    zip_path = Path(zip_path_text)
+    if not zip_path.exists():
+        return "zip file no longer exists", 404
+    return send_file(
+        zip_path,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name="matched_photos.zip",
+    )
+
+
+@app.post("/download-zip")
+@app.post("/results/download-zip")
+def download_zip() -> Any:
+    match_items, error, status = parse_match_images_json(request.form.get("match_images_json", ""))
+    if error is not None or match_items is None:
+        return error or "invalid request", status
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        downloaded_count, _failed_items = build_zip_from_match_items(match_items, zf)
+
+    if downloaded_count == 0:
+        return "Unable to download any images for ZIP export. See server logs/report for details.", 502
+
+    zip_buffer.seek(0)
+    return send_file(
+        zip_buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name="matched_photos.zip",
+    )
 
 
 def parse_args() -> argparse.Namespace:

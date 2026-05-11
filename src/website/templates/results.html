@@ -15,7 +15,22 @@
       </section>
       {% else %}
       <section>
-        <p class="results-count">Total photos found: {{ payload.match_images|length }}</p>
+        <div class="results-toolbar">
+          <p class="results-count">Total photos found: {{ payload.match_images|length }}</p>
+          {% if payload.match_images|length > 0 %}
+          <form
+            method="post"
+            action="download-zip"
+            data-start-action="download-zip/start"
+            class="results-download-all-form"
+            id="downloadAllForm"
+          >
+            <input type="hidden" name="match_images_json" value='{{ payload.match_images|tojson }}' />
+            <button type="submit" class="results-download-all-btn" id="downloadAllBtn">Download All as ZIP</button>
+          </form>
+          <p id="zipJobStatus" class="results-zip-status" aria-live="polite"></p>
+          {% endif %}
+        </div>
         <hr class="results-divider" />
 
         {% if payload.match_images|length == 0 %}
@@ -68,6 +83,85 @@
           fallback.hidden = false;
         }
       }
+
+      async function pollZipJob(statusUrl, downloadUrl, statusEl, buttonEl) {
+        while (true) {
+          const res = await fetch(statusUrl, {
+            method: "GET",
+            headers: { Accept: "application/json" },
+            cache: "no-store",
+          });
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error(text || "Failed to check ZIP status");
+          }
+          const data = await res.json();
+          const processed = Number(data.processed || 0);
+          const total = Number(data.total || 0);
+          const downloaded = Number(data.downloaded || 0);
+          const failed = Number(data.failed || 0);
+
+          if (data.status === "completed") {
+            statusEl.textContent = `ZIP ready. Downloaded ${downloaded}/${total} photos.`;
+            statusEl.classList.remove("is-error");
+            window.location.href = downloadUrl;
+            buttonEl.disabled = false;
+            return;
+          }
+
+          if (data.status === "failed") {
+            statusEl.textContent = data.error || "ZIP build failed.";
+            statusEl.classList.add("is-error");
+            buttonEl.disabled = false;
+            return;
+          }
+
+          statusEl.textContent = `Preparing ZIP... ${processed}/${total} processed (${downloaded} success, ${failed} failed).`;
+          statusEl.classList.remove("is-error");
+          await new Promise((resolve) => setTimeout(resolve, 1400));
+        }
+      }
+
+      (function bindAsyncZipDownload() {
+        var form = document.getElementById("downloadAllForm");
+        var buttonEl = document.getElementById("downloadAllBtn");
+        var statusEl = document.getElementById("zipJobStatus");
+        if (!form || !buttonEl || !statusEl) return;
+
+        form.addEventListener("submit", async function (event) {
+          event.preventDefault();
+          buttonEl.disabled = true;
+          statusEl.textContent = "Starting ZIP job...";
+          statusEl.classList.remove("is-error");
+
+          try {
+            var startUrl = form.getAttribute("data-start-action") || "download-zip/start";
+            var formData = new FormData(form);
+            var startRes = await fetch(startUrl, {
+              method: "POST",
+              body: formData,
+              headers: { Accept: "application/json" },
+            });
+            if (!startRes.ok) {
+              var startText = await startRes.text();
+              throw new Error(startText || "Failed to start ZIP job");
+            }
+
+            var payload = await startRes.json();
+            if (!payload.job_id) {
+              throw new Error("ZIP job id missing in server response");
+            }
+
+            var statusUrl = startUrl.replace(/\/start$/, "/status/" + encodeURIComponent(payload.job_id));
+            var downloadUrl = startUrl.replace(/\/start$/, "/file/" + encodeURIComponent(payload.job_id));
+            await pollZipJob(statusUrl, downloadUrl, statusEl, buttonEl);
+          } catch (err) {
+            statusEl.textContent = "ZIP start failed: " + String(err);
+            statusEl.classList.add("is-error");
+            buttonEl.disabled = false;
+          }
+        });
+      })();
     </script>
   </body>
 </html>
