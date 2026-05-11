@@ -190,10 +190,27 @@ pre {
   white-space: nowrap;
 }
 
+.results-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2d3d;
+}
+
 .results-zip-status {
   margin: 8px 0 0;
   font-size: 14px;
   color: #2f4d79;
+  text-align: right;
+}
+
+.results-selection-status {
+  margin: 8px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2d3d;
   text-align: right;
 }
 
@@ -224,8 +241,30 @@ pre {
 }
 
 .thumb-link {
+  position: relative;
   width: 100%;
   text-decoration: none;
+}
+
+.thumb-select {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #182230;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.thumb-select-checkbox {
+  width: 16px;
+  height: 16px;
 }
 
 .thumb-image {
@@ -305,7 +344,15 @@ pre {
     padding: 9px 12px;
   }
 
+  .results-select-all {
+    font-size: 14px;
+  }
+
   .results-zip-status {
+    font-size: 13px;
+  }
+
+  .results-selection-status {
     font-size: 13px;
   }
 
@@ -355,6 +402,14 @@ pre {
 
   .results-zip-status {
     text-align: left;
+  }
+
+  .results-selection-status {
+    text-align: left;
+  }
+
+  .results-select-all {
+    font-size: 14px;
   }
 
   .thumb-grid {

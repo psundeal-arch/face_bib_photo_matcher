@@ -18,6 +18,10 @@
         <div class="results-toolbar">
           <p class="results-count">Total photos found: {{ payload.match_images|length }}</p>
           {% if payload.match_images|length > 0 %}
+          <label class="results-select-all">
+            <input type="checkbox" id="selectAllPhotos" checked />
+            Select all
+          </label>
           <form
             method="post"
             action="download-zip"
@@ -25,9 +29,17 @@
             class="results-download-all-form"
             id="downloadAllForm"
           >
-            <input type="hidden" name="match_images_json" value='{{ payload.match_images|tojson }}' />
-            <button type="submit" class="results-download-all-btn" id="downloadAllBtn">Download All as ZIP</button>
+            <input
+              type="hidden"
+              name="match_images_json"
+              id="matchImagesJson"
+              value='{{ payload.match_images|tojson }}'
+            />
+            <button type="submit" class="results-download-all-btn" id="downloadAllBtn">
+              Download Selected as ZIP
+            </button>
           </form>
+          <p id="selectionSummary" class="results-selection-status" aria-live="polite"></p>
           <p id="zipJobStatus" class="results-zip-status" aria-live="polite"></p>
           {% endif %}
         </div>
@@ -40,6 +52,10 @@
           {% for item in payload.match_images %}
           <article class="thumb-card">
             <div class="thumb-link">
+              <label class="thumb-select">
+                <input type="checkbox" class="thumb-select-checkbox" data-photo-index="{{ loop.index0 }}" checked />
+                Pick
+              </label>
               <img
                 src="{{ item.preview_url }}"
                 alt="{{ item.image_name }}"
@@ -126,17 +142,86 @@
         var form = document.getElementById("downloadAllForm");
         var buttonEl = document.getElementById("downloadAllBtn");
         var statusEl = document.getElementById("zipJobStatus");
-        if (!form || !buttonEl || !statusEl) return;
+        var selectionSummaryEl = document.getElementById("selectionSummary");
+        var matchImagesJsonEl = document.getElementById("matchImagesJson");
+        var selectAllEl = document.getElementById("selectAllPhotos");
+        var pickEls = Array.from(document.querySelectorAll(".thumb-select-checkbox"));
+        if (
+          !form ||
+          !buttonEl ||
+          !statusEl ||
+          !selectionSummaryEl ||
+          !matchImagesJsonEl ||
+          !selectAllEl ||
+          pickEls.length === 0
+        ) {
+          return;
+        }
+
+        function refreshSelectAllState() {
+          var checkedCount = pickEls.filter(function (el) {
+            return el.checked;
+          }).length;
+          selectAllEl.checked = checkedCount === pickEls.length;
+          selectAllEl.indeterminate = checkedCount > 0 && checkedCount < pickEls.length;
+          selectionSummaryEl.textContent = "Selected: " + checkedCount + " / " + pickEls.length;
+        }
+
+        selectAllEl.addEventListener("change", function () {
+          var checked = selectAllEl.checked;
+          pickEls.forEach(function (el) {
+            el.checked = checked;
+          });
+          selectAllEl.indeterminate = false;
+          refreshSelectAllState();
+        });
+
+        pickEls.forEach(function (el) {
+          el.addEventListener("change", function () {
+            refreshSelectAllState();
+          });
+        });
+
+        refreshSelectAllState();
 
         form.addEventListener("submit", async function (event) {
           event.preventDefault();
+
+          var allItems;
+          try {
+            allItems = JSON.parse(matchImagesJsonEl.value);
+          } catch (_err) {
+            statusEl.textContent = "Invalid photo list in page payload.";
+            statusEl.classList.add("is-error");
+            return;
+          }
+
+          var selectedItems = pickEls
+            .filter(function (el) {
+              return el.checked;
+            })
+            .map(function (el) {
+              var idx = Number(el.getAttribute("data-photo-index"));
+              return allItems[idx];
+            })
+            .filter(function (item) {
+              return !!item;
+            });
+
+          if (selectedItems.length === 0) {
+            statusEl.textContent = "Please select at least one photo.";
+            statusEl.classList.add("is-error");
+            return;
+          }
+
           buttonEl.disabled = true;
-          statusEl.textContent = "Starting ZIP job...";
+          statusEl.textContent = "Starting ZIP job for " + selectedItems.length + " selected photos...";
           statusEl.classList.remove("is-error");
 
           try {
             var startUrl = form.getAttribute("data-start-action") || "download-zip/start";
             var formData = new FormData(form);
+            formData.set("match_images_json", JSON.stringify(selectedItems));
             var startRes = await fetch(startUrl, {
               method: "POST",
               body: formData,
