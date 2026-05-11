@@ -1,0 +1,36 @@
+downloader:
+  output: downloads
+  output_json_dir: reports
+  delay: 0.0
+  limit: null
+  use_dynamic_fetch: true
+  face_distance_threshold: 1.0
+  insightface_det_size: 640
+  insightface_model_name: buffalo_l
+  insightface_provider: auto
+  enable_bib_ocr: true
+  # OCR confidence threshold for RapidOCR ONNX (0.0 - 1.0).
+  # Raise this to reduce false positives; lower it to increase recall.
+  ocr_min_score: 0.45
+  # Default OCR preprocessing variants. Otsu-only is faster than multi-variant mode.
+  # Supported values: gray, adaptive, otsu, inv_adaptive, inv_otsu
+  ocr_variants:
+    - otsu
+  # Extra full-image OCR pass in addition to per-face torso OCR.
+  # Keep true for better recall; set false for lower latency.
+  ocr_enable_global_pass: true
+  workers: 2
+  max_pending_downloads: null
+  checkpoint_batch: 20
+
+website:
+  host: 127.0.0.1
+  port: 8000
+  reports_dir: reports
+  race_reports:
+    "2026 SU Mother's Day 5k": reports_2026_su_mothersday_5k
+    "2026 Boston Marathon": reports_2026_boston_marathon
+  default_race: "2026 SU Mother's Day 5k"
+  insightface_det_size: 640
+  max_results: 30
+  default_embedding_threshold: 1.0

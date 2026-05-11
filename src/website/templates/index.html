@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bib + Face Matcher</title>
+    <link rel="stylesheet" href="static/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Bib + Face Matcher</h1>
+      <p class="lead">
+        Take/upload a photo, enter bib number, and match against entries in <code>reports/*.json</code>.
+      </p>
+
+      <section class="card">
+        <h2>Input</h2>
+        <form id="matchForm">
+          <label>
+            Marathon Race
+            <select id="raceSelect" name="race_label" required>
+              {% for race in race_options %}
+              <option value="{{ race.label }}" {% if race.label == default_race %}selected{% endif %}>
+                {{ race.label }}
+              </option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label>
+            Bib Number
+            <input id="bibInput" name="bib_number" type="text" required placeholder="e.g. 315" />
+          </label>
+
+          <label>
+            Embedding Threshold (L2 distance, lower = stricter)
+            <input
+              id="embeddingThresholdInput"
+              name="embedding_threshold"
+              type="number"
+              min="0.01"
+              step="0.01"
+              value="1.00"
+            />
+          </label>
+
+          <fieldset class="source-fieldset">
+            <legend>Photo Source</legend>
+            <label class="radio-row">
+              <input type="radio" name="photo_source" value="upload" checked />
+              Upload from device
+            </label>
+            <label class="radio-row">
+              <input type="radio" name="photo_source" value="camera" />
+              Use camera capture
+            </label>
+          </fieldset>
+
+          <label id="uploadBlock">
+            Upload Photo
+            <input id="fileInput" name="photo" type="file" accept="image/*" />
+          </label>
+
+          <div class="camera-block hidden" id="cameraBlock">
+            <div class="camera-controls">
+              <button type="button" id="startCamBtn">Start Camera</button>
+              <button type="button" id="captureBtn" disabled>Capture Photo</button>
+            </div>
+            <video id="video" autoplay playsinline></video>
+            <canvas id="canvas" class="hidden"></canvas>
+            <img id="preview" alt="Captured preview" class="hidden" />
+          </div>
+
+          <button type="submit" id="submitBtn">Match</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Result</h2>
+        <pre id="status">Waiting for input...</pre>
+        <div id="matches"></div>
+      </section>
+    </main>
+
+    <script src="static/app.js"></script>
+  </body>
+</html>

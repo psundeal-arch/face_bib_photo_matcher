@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MPhoto Results</title>
+    <link rel="stylesheet" href="static/styles.css" />
+  </head>
+  <body class="results-page">
+    <main class="results-wrap">
+      {% if error %}
+      <section class="card">
+        <h2>Error</h2>
+        <pre id="status">status: {{ status_code }}&#10;{{ error }}</pre>
+      </section>
+      {% else %}
+      <section>
+        <p class="results-count">Total photos found: {{ payload.match_images|length }}</p>
+        <hr class="results-divider" />
+
+        {% if payload.match_images|length == 0 %}
+        <p class="results-empty">No matched photos found.</p>
+        {% else %}
+        <section class="thumb-grid">
+          {% for item in payload.match_images %}
+          <article class="thumb-card">
+            <div class="thumb-link">
+              <img
+                src="{{ item.preview_url }}"
+                alt="{{ item.image_name }}"
+                class="thumb-image"
+                loading="lazy"
+                onerror="handleThumbnailError(this)"
+              />
+              <div class="thumb-fallback" hidden>
+                <p class="thumb-fallback-title">Photo Information</p>
+                <p><strong>Album:</strong> {{ item.album_title or "Unknown album" }}</p>
+                <p><strong>Image:</strong> {{ item.image_name }}</p>
+                {% if item.album_url %}
+                <p><a href="{{ item.album_url }}" target="_blank" rel="noopener noreferrer">Open album</a></p>
+                {% endif %}
+                <p class="thumb-fallback-note">
+                  This tool may not support preview/load/download forever for some images.
+                  The download button may not work. Please use the album/image info above to search for the image.
+                </p>
+              </div>
+            </div>
+            <div class="thumb-match-meta">
+              {{ item.match_summary }}{% if item.match_details %} ({{ item.match_details }}){% endif %}
+            </div>
+            <a href="{{ item.download_url }}" target="_blank" rel="noopener noreferrer" class="thumb-download">
+              &#8681; {{ item.image_name }}
+            </a>
+          </article>
+          {% endfor %}
+        </section>
+        {% endif %}
+      </section>
+      {% endif %}
+    </main>
+    <script>
+      function handleThumbnailError(img) {
+        img.style.display = "none";
+        var parent = img.parentElement;
+        if (!parent) return;
+        var fallback = parent.querySelector(".thumb-fallback");
+        if (fallback) {
+          fallback.hidden = false;
+        }
+      }
+    </script>
+  </body>
+</html>

@@ -8,3 +8,6 @@ google_photos_api_manager.py
 
 *.json 
 
+
+reports/*
+downloads/*
