@@ -1,4 +1,4 @@
-# google_albums_downloader
+# face_bib_photo_matcher
 
 Utility scripts for working with Google Photos shared albums and face indexing.
 
@@ -26,22 +26,21 @@ Run integration tests (uses `tests/fixtures/BE7I4001.JPG` and real InsightFace r
 RUN_INTEGRATION_TESTS=1 python3 -m unittest discover -s tests -p 'test_*.py' -q
 ```
 
-## Website (Bib + BBox Match)
+## Website (Bib + Face Match)
 
 Path: `src/website`
 
 This web app lets a user:
 - take a photo from camera or upload one
 - input a bib number
-- tune IoU threshold (lower = looser matching)
 - tune embedding threshold (L2 distance, lower = stricter)
-- run InsightFace to get face bbox/hash from the uploaded photo
-- search matching entries from JSON files under `reports/*.json` using bib + face bbox similarity + face embedding distance (with exact face-hash boost)
+- run InsightFace to get face hash + embedding from the uploaded photo
+- search matching entries from JSON files under `reports/*.json` using bib match and face similarity (exact face-hash match and embedding distance)
 
 ### Run
 
 ```bash
-pip install flask opencv-python insightface onnxruntime numpy
+pip install flask opencv-python insightface onnxruntime numpy pyyaml
 python3 src/website/app.py --host 127.0.0.1 --port 8000
 ```
 
@@ -63,7 +62,6 @@ uvicorn --app-dir src/website asgi:app --host 127.0.0.1 --port 8000 --workers 1
 - `WEBSITE_DEFAULT_RACE`: default selected race label in the dropdown
 - `WEBSITE_INSIGHTFACE_DET_SIZE`: detector size (default: `640`)
 - `WEBSITE_MAX_RESULTS`: max matches returned (default: `30`)
-- `WEBSITE_DEFAULT_IOU_THRESHOLD`: default IoU threshold if UI value is empty (default: `0.05`)
 - `WEBSITE_DEFAULT_EMBEDDING_THRESHOLD`: default embedding L2 threshold if UI value is empty (default: `1.0`)
 
 ## Shared Album Face + Bib Pipeline
@@ -107,7 +105,7 @@ python3 src/shared_album_downloader.py \
 - `--max-pending-downloads <n>`: cap of downloaded-but-not-yet-processed files; downloader pauses when cap is reached (default: `workers * 4`)
 - `--checkpoint-batch <n>`: update album JSON after every N completed scans (default: `20`)
 - `--delay <sec>`: delay between downloads
-- `--insightface-det-size <n>`: detector input size (default: `320`)
+- `--insightface-det-size <n>`: detector input size (default comes from `config.yaml`; fallback is `320`)
 - `--insightface-model-name <name>`: InsightFace model pack (default: `buffalo_l`; try `buffalo_s` for lower CPU)
 - `--insightface-provider <auto|cpu|coreml>`: execution provider mode (default: `auto`; use `cpu` for lowest resource)
 - `--face-distance-threshold <f>`: face-id grouping threshold (default: `1.0`)
@@ -243,12 +241,7 @@ The registry file has this structure:
             {
               "face_index": 1,
               "hashcode": "...",
-              "bbox": {
-                "left": 100.0,
-                "top": 50.0,
-                "right": 220.0,
-                "bottom": 190.0
-              },
+              "embedding": [0.123456, -0.234567, 0.345678],
               "det_score": 0.99,
               "area": 16800.0
             }
