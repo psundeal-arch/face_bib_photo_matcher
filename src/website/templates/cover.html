@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Race Cover Page</title>
+    <link rel="stylesheet" href="static/styles.css" />
+  </head>
+  <body class="cover-page">
+    <main class="container cover-container">
+      <h1>Race Cover Page</h1>
+      <p class="lead">Select a race card to enter the matcher input page.</p>
+
+      <section class="card">
+        <section class="race-cover-grid">
+          {% for race in race_options %}
+          <article class="race-cover-card">
+            <a
+              class="race-cover-link"
+              href="input?race_label={{ race.label | urlencode }}"
+              aria-label="Choose {{ race.label }}"
+            >
+              {% if race.cover_image_url %}
+              <img src="{{ race.cover_image_url }}" alt="{{ race.label }} cover image" class="race-cover-image" />
+              {% else %}
+              <div class="race-cover-placeholder">No cover image</div>
+              {% endif %}
+              <div class="race-cover-title">{{ race.label }}</div>
+            </a>
+          </article>
+          {% endfor %}
+        </section>
+      </section>
+    </main>
+  </body>
+</html>

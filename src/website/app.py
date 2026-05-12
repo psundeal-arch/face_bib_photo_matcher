@@ -37,6 +37,7 @@ APP_DIR = Path(__file__).resolve().parent
 REPO_ROOT = APP_DIR.parent.parent
 DEFAULT_REPORTS_DIR = REPO_ROOT / "reports"
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config.yaml"
+STATIC_IMAGES_DIR = APP_DIR / "static" / "images"
 
 app = Flask(__name__, template_folder=str(APP_DIR / "templates"), static_folder=str(APP_DIR / "static"))
 
@@ -156,6 +157,38 @@ def load_race_reports_config() -> tuple[Dict[str, Path], str]:
     if default_label not in mapping:
         default_label = next(iter(mapping.keys()))
     return mapping, default_label
+
+
+def slugify_label(label: str) -> str:
+    normalized = re.sub(r"[^a-zA-Z0-9]+", "-", label.lower()).strip("-")
+    return normalized or "race"
+
+
+def static_image_url_for_name(name: str) -> str:
+    clean = Path(str(name)).name
+    return f"static/images/{clean}"
+
+
+def resolve_race_cover_image_url(race_label: str) -> str:
+    cfg_map = WEBSITE_CONFIG.get("race_cover_images")
+    if isinstance(cfg_map, dict):
+        raw = cfg_map.get(race_label)
+        if isinstance(raw, str) and raw.strip():
+            configured = raw.strip()
+            if configured.startswith("http://") or configured.startswith("https://"):
+                return configured
+            if configured.startswith("static/"):
+                return configured
+            if configured.startswith("images/"):
+                return f"static/{configured}"
+            return static_image_url_for_name(configured)
+
+    slug = slugify_label(race_label)
+    for ext in ("jpg", "jpeg", "png", "webp"):
+        candidate = STATIC_IMAGES_DIR / f"{slug}.{ext}"
+        if candidate.is_file():
+            return static_image_url_for_name(candidate.name)
+    return ""
 
 
 def resolve_reports_dir_by_race(race_label: Optional[str]) -> tuple[Path, str]:
@@ -715,12 +748,43 @@ def create_download_zip_job(match_items: List[Dict[str, Any]]) -> str:
 
 
 @app.get("/")
-def index() -> Any:
+def cover_page() -> Any:
     race_map, default_race = load_race_reports_config()
+    race_options = []
+    for label, path in race_map.items():
+        race_options.append(
+            {
+                "label": label,
+                "path": str(path),
+                "cover_image_url": resolve_race_cover_image_url(label),
+            }
+        )
+    return render_template(
+        "cover.html",
+        race_options=race_options,
+        default_race=default_race,
+    )
+
+
+@app.get("/input")
+def input_page() -> Any:
+    race_map, default_race = load_race_reports_config()
+    race_options = []
+    for label, path in race_map.items():
+        race_options.append(
+            {
+                "label": label,
+                "path": str(path),
+                "cover_image_url": resolve_race_cover_image_url(label),
+            }
+        )
+    selected_race = (request.args.get("race_label") or "").strip()
+    if selected_race not in race_map:
+        selected_race = default_race
     return render_template(
         "index.html",
-        race_options=[{"label": label, "path": str(path)} for label, path in race_map.items()],
-        default_race=default_race,
+        race_options=race_options,
+        default_race=selected_race,
     )
 
 

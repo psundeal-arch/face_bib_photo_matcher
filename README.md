@@ -44,7 +44,8 @@ pip install flask opencv-python insightface onnxruntime numpy pyyaml
 python3 src/website/app.py --host 127.0.0.1 --port 8000
 ```
 
-Open: `http://127.0.0.1:8000`
+Open cover page: `http://127.0.0.1:8000`  
+Input page: `http://127.0.0.1:8000/input`
 
 ### Run with Uvicorn (ASGI process manager)
 
@@ -60,6 +61,9 @@ uvicorn --app-dir src/website asgi:app --host 127.0.0.1 --port 8000 --workers 1
 - `WEBSITE_RACE_REPORTS_JSON`: race->reports mapping JSON for dropdown, for example:
   - `{"2026 Boston Marathon":"reports","2026 Tokyo Marathon":"reports_tokyo"}`
 - `WEBSITE_DEFAULT_RACE`: default selected race label in the dropdown
+- `website.race_cover_images` in `config.yaml`: optional race->cover image mapping for home cover cards
+  - put files under `src/website/static/images/`
+  - map each race label to a filename, for example `"2026 Boston Marathon": "2026-boston-marathon.jpg"`
 - `WEBSITE_INSIGHTFACE_DET_SIZE`: detector size (default: `640`)
 - `WEBSITE_MAX_RESULTS`: max matches returned (default: `30`)
 - `WEBSITE_DEFAULT_EMBEDDING_THRESHOLD`: default embedding L2 threshold if UI value is empty (default: `1.0`)

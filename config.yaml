@@ -30,6 +30,14 @@ website:
   race_reports:
     "2026 SU Mother's Day 5k": reports_2026_su_mothersday_5k
     "2026 Boston Marathon": reports_2026_boston_marathon
+  # Optional: race cover images shown on website home cover page.
+  # Value can be:
+  # - a file name under src/website/static/images (e.g. "boston-2026.jpg")
+  # - "images/<file>" or "static/images/<file>"
+  # - a full http(s) URL
+  race_cover_images:
+    "2026 SU Mother's Day 5k": "2026-su-mothers-day-5k.jpg"
+    "2026 Boston Marathon": "2026-boston-marathon.jpg"
   default_race: "2026 SU Mother's Day 5k"
   insightface_det_size: 640
   max_results: 999
