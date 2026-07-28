@@ -1,0 +1,86 @@
+import sys
+import unittest
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+import build_person_index as bpi
+
+
+class TestDbscanCosine(unittest.TestCase):
+    def test_two_tight_clusters_plus_noise(self) -> None:
+        # Two well-separated directions (each repeated), plus one lone outlier.
+        a = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        b = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+        outlier = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+        X = np.vstack([a, a, a, b, b, b, outlier])
+
+        labels = bpi.dbscan_cosine(X, cosine_min=0.9, min_samples=3)
+
+        # First three share a label, next three share another, they differ.
+        self.assertEqual(labels[0], labels[1])
+        self.assertEqual(labels[1], labels[2])
+        self.assertEqual(labels[3], labels[4])
+        self.assertNotEqual(labels[0], labels[3])
+        # The lone point is noise.
+        self.assertEqual(labels[6], -1)
+
+    def test_empty_input(self) -> None:
+        labels = bpi.dbscan_cosine(np.empty((0, 3), dtype=np.float32), 0.5, 3)
+        self.assertEqual(labels.size, 0)
+
+
+class TestBuildPersons(unittest.TestCase):
+    def _face(self, emb, det, url, name="a.jpg", bibs=None):
+        return {
+            "embedding": np.asarray(emb, dtype=np.float32),
+            "det_score": float(det),
+            "source_url": url,
+            "image_name": name,
+            "image_bibs": bibs or [],
+        }
+
+    def test_representative_is_highest_det_and_photos_deduped(self) -> None:
+        faces = [
+            self._face([1, 0], 0.7, "https://x/p1", "p1.jpg"),
+            self._face([1, 0], 0.9, "https://x/p2", "p2.jpg"),
+            self._face([1, 0], 0.8, "https://x/p1", "p1.jpg"),  # same photo as first
+        ]
+        labels = np.array([0, 0, 0])
+        persons = bpi.build_persons(faces, labels)
+
+        self.assertEqual(len(persons), 1)
+        person = persons[0]
+        self.assertEqual(person["person_id"], "person_0001")
+        self.assertEqual(person["face_count"], 3)
+        self.assertEqual(person["photo_count"], 2)  # p1 deduped
+        # Representative comes from the highest det_score face (0.9 -> p2).
+        self.assertEqual(person["representative"]["image_name"], "p2.jpg")
+        self.assertTrue(person["representative"]["preview_url"].endswith("=w800-h560-no"))
+
+    def test_persons_sorted_by_photo_count(self) -> None:
+        faces = [
+            self._face([1, 0], 0.9, "https://x/a1"),
+            self._face([0, 1], 0.9, "https://x/b1"),
+            self._face([0, 1], 0.9, "https://x/b2"),
+        ]
+        labels = np.array([0, 1, 1])
+        persons = bpi.build_persons(faces, labels)
+        # Cluster 1 has 2 photos, cluster 0 has 1 -> the 2-photo person ranks first.
+        self.assertEqual(persons[0]["photo_count"], 2)
+        self.assertEqual(persons[0]["person_id"], "person_0001")
+        self.assertEqual(persons[1]["photo_count"], 1)
+
+    def test_noise_faces_excluded(self) -> None:
+        faces = [self._face([1, 0], 0.9, "https://x/a1")]
+        labels = np.array([-1])
+        self.assertEqual(bpi.build_persons(faces, labels), [])
+
+
+if __name__ == "__main__":
+    unittest.main()

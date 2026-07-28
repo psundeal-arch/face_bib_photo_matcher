@@ -48,6 +48,8 @@ _report_cache: Dict[str, Dict[str, Any]] = {}
 _download_jobs_lock = threading.Lock()
 _download_jobs: Dict[str, Dict[str, Any]] = {}
 DOWNLOAD_JOB_TTL_SECONDS = 60 * 60
+_persons_cache_lock = threading.Lock()
+_persons_cache: Dict[str, Dict[str, Any]] = {}
 
 
 def _load_website_config() -> Dict[str, Any]:
@@ -355,6 +357,67 @@ def load_report_payloads_cached(report_files: List[Path]) -> List[tuple[Path, Di
             _report_cache[cache_key] = {"mtime": mtime, "payload": payload}
             payloads.append((report_path, payload))
     return payloads
+
+
+def load_persons_index_cached(sidecar_path: Path) -> Optional[Dict[str, Any]]:
+    try:
+        stat = sidecar_path.stat()
+    except Exception:
+        return None
+    cache_key = str(sidecar_path.resolve())
+    mtime = float(stat.st_mtime)
+    with _persons_cache_lock:
+        cached = _persons_cache.get(cache_key)
+        if cached and float(cached.get("mtime", -1.0)) == mtime and isinstance(cached.get("payload"), dict):
+            return cached["payload"]
+        try:
+            payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        _persons_cache[cache_key] = {"mtime": mtime, "payload": payload}
+        return payload
+
+
+def load_race_persons(race_label: Optional[str]) -> tuple[List[Dict[str, Any]], str]:
+    """Return (persons, resolved_race). Each person carries a composite `pid`.
+
+    Persons come from `<report_stem>.persons.json` sidecar files (built offline by
+    build_person_index.py) for every report in the race's reports dir.
+    """
+    reports_dir, resolved_race = resolve_reports_dir_by_race(race_label)
+    persons: List[Dict[str, Any]] = []
+    if not reports_dir.exists():
+        return persons, resolved_race
+
+    for sidecar in sorted(reports_dir.glob("*.persons.json")):
+        index = load_persons_index_cached(sidecar)
+        if index is None:
+            continue
+        report_stem = sidecar.name[: -len(".persons.json")]
+        album_title = index.get("album_title") or ""
+        for person in index.get("persons", []):
+            if not isinstance(person, dict):
+                continue
+            person_id = str(person.get("person_id") or "")
+            if not person_id:
+                continue
+            enriched = dict(person)
+            enriched["pid"] = f"{report_stem}::{person_id}"
+            enriched["album_title"] = album_title
+            persons.append(enriched)
+
+    persons.sort(key=lambda p: (-int(p.get("photo_count", 0)), -int(p.get("face_count", 0))))
+    return persons, resolved_race
+
+
+def find_race_person(race_label: Optional[str], pid: str) -> tuple[Optional[Dict[str, Any]], str]:
+    persons, resolved_race = load_race_persons(race_label)
+    for person in persons:
+        if person.get("pid") == pid:
+            return person, resolved_race
+    return None, resolved_race
 
 
 def match_against_reports(
@@ -747,6 +810,20 @@ def create_download_zip_job(match_items: List[Dict[str, Any]]) -> str:
     return job_id
 
 
+def count_race_persons(reports_dir: Path) -> int:
+    if not reports_dir.exists():
+        return 0
+    total = 0
+    for sidecar in reports_dir.glob("*.persons.json"):
+        index = load_persons_index_cached(sidecar)
+        if isinstance(index, dict):
+            try:
+                total += int(index.get("person_count", 0))
+            except Exception:
+                continue
+    return total
+
+
 @app.get("/")
 def cover_page() -> Any:
     race_map, default_race = load_race_reports_config()
@@ -757,12 +834,43 @@ def cover_page() -> Any:
                 "label": label,
                 "path": str(path),
                 "cover_image_url": resolve_race_cover_image_url(label),
+                "person_count": count_race_persons(path),
             }
         )
     return render_template(
         "cover.html",
         race_options=race_options,
         default_race=default_race,
+    )
+
+
+@app.get("/persons")
+def persons_page() -> Any:
+    race_map, default_race = load_race_reports_config()
+    selected_race = (request.args.get("race_label") or "").strip()
+    if selected_race not in race_map:
+        selected_race = default_race
+    persons, resolved_race = load_race_persons(selected_race)
+    return render_template(
+        "persons.html",
+        persons=persons,
+        race_label=resolved_race,
+        person_count=len(persons),
+    )
+
+
+@app.get("/person")
+def person_page() -> Any:
+    race_map, default_race = load_race_reports_config()
+    selected_race = (request.args.get("race_label") or "").strip()
+    if selected_race not in race_map:
+        selected_race = default_race
+    pid = (request.args.get("pid") or "").strip()
+    person, resolved_race = find_race_person(selected_race, pid)
+    return render_template(
+        "person.html",
+        person=person,
+        race_label=resolved_race,
     )
 
 

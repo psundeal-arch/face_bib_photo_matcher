@@ -304,6 +304,77 @@ pre {
   font-size: 28px;
 }
 
+/* People gallery */
+.people-header {
+  margin-bottom: 6px;
+}
+
+.people-back {
+  display: inline-block;
+  margin-bottom: 10px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #2f4d79;
+  text-decoration: none;
+}
+
+.people-back:hover {
+  text-decoration: underline;
+}
+
+.people-title {
+  margin: 0 0 6px;
+  font-size: 40px;
+  line-height: 1.05;
+}
+
+.race-cover-people-link {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1d5fd3;
+  text-decoration: none;
+}
+
+.race-cover-people-link:hover {
+  text-decoration: underline;
+}
+
+.people-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 18px;
+}
+
+.person-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+
+.person-image {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 10px;
+  background: #d8d8d8;
+  border: 1px solid #c4c4c4;
+}
+
+.person-image.is-broken {
+  min-height: 150px;
+}
+
+.person-meta {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: #3b3f46;
+}
+
 .thumb-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

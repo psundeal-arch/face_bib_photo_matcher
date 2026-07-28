@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Person &mdash; {{ race_label }}</title>
+    <link rel="stylesheet" href="static/styles.css" />
+  </head>
+  <body class="results-page">
+    <main class="results-wrap">
+      {% if not person %}
+      <div class="people-header">
+        <a class="people-back" href="persons?race_label={{ race_label | urlencode }}">&#8592; Back to people</a>
+        <h1 class="people-title">Person not found</h1>
+      </div>
+      <p class="results-empty">This person is no longer available. It may have been re-indexed.</p>
+      {% else %}
+      <div class="people-header">
+        <a class="people-back" href="persons?race_label={{ race_label | urlencode }}">&#8592; Back to people</a>
+        <div class="results-toolbar">
+          <p class="results-count">{{ person.photos|length }} photo{{ '' if person.photos|length == 1 else 's' }} of this person</p>
+          {% if person.photos|length > 0 %}
+          <label class="results-select-all">
+            <input type="checkbox" id="selectAllPhotos" checked />
+            Select all
+          </label>
+          <form
+            method="post"
+            action="download-zip"
+            data-start-action="download-zip/start"
+            class="results-download-all-form"
+            id="downloadAllForm"
+          >
+            <input
+              type="hidden"
+              name="match_images_json"
+              id="matchImagesJson"
+              value='{{ person.photos|tojson }}'
+            />
+            <button type="submit" class="results-download-all-btn" id="downloadAllBtn">
+              Download Selected as ZIP
+            </button>
+          </form>
+          <p id="selectionSummary" class="results-selection-status" aria-live="polite"></p>
+          <p id="zipJobStatus" class="results-zip-status" aria-live="polite"></p>
+          {% endif %}
+        </div>
+      </div>
+      <hr class="results-divider" />
+
+      <section class="thumb-grid">
+        {% for item in person.photos %}
+        <article class="thumb-card">
+          <div class="thumb-link">
+            <label class="thumb-select">
+              <input type="checkbox" class="thumb-select-checkbox" data-photo-index="{{ loop.index0 }}" checked />
+              Pick
+            </label>
+            <img
+              src="{{ item.preview_url }}"
+              alt="{{ item.image_name }}"
+              class="thumb-image"
+              loading="lazy"
+              onerror="handleThumbnailError(this)"
+            />
+            <div class="thumb-fallback" hidden>
+              <p class="thumb-fallback-title">Photo Information</p>
+              <p><strong>Image:</strong> {{ item.image_name }}</p>
+              <p class="thumb-fallback-note">
+                This tool may not support preview/load/download forever for some images.
+              </p>
+            </div>
+          </div>
+          <a href="{{ item.download_url }}" target="_blank" rel="noopener noreferrer" class="thumb-download">
+            &#8681; {{ item.image_name }}
+          </a>
+        </article>
+        {% endfor %}
+      </section>
+      {% endif %}
+    </main>
+    <script>
+      function handleThumbnailError(img) {
+        img.style.display = "none";
+        var parent = img.parentElement;
+        if (!parent) return;
+        var fallback = parent.querySelector(".thumb-fallback");
+        if (fallback) {
+          fallback.hidden = false;
+        }
+      }
+
+      async function pollZipJob(statusUrl, downloadUrl, statusEl, buttonEl) {
+        while (true) {
+          const res = await fetch(statusUrl, {
+            method: "GET",
+            headers: { Accept: "application/json" },
+            cache: "no-store",
+          });
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error(text || "Failed to check ZIP status");
+          }
+          const data = await res.json();
+          const processed = Number(data.processed || 0);
+          const total = Number(data.total || 0);
+          const downloaded = Number(data.downloaded || 0);
+          const failed = Number(data.failed || 0);
+
+          if (data.status === "completed") {
+            statusEl.textContent = `ZIP ready. Downloaded ${downloaded}/${total} photos.`;
+            statusEl.classList.remove("is-error");
+            window.location.href = downloadUrl;
+            buttonEl.disabled = false;
+            return;
+          }
+
+          if (data.status === "failed") {
+            statusEl.textContent = data.error || "ZIP build failed.";
+            statusEl.classList.add("is-error");
+            buttonEl.disabled = false;
+            return;
+          }
+
+          statusEl.textContent = `Preparing ZIP... ${processed}/${total} processed (${downloaded} success, ${failed} failed).`;
+          statusEl.classList.remove("is-error");
+          await new Promise((resolve) => setTimeout(resolve, 1400));
+        }
+      }
+
+      (function bindAsyncZipDownload() {
+        var form = document.getElementById("downloadAllForm");
+        var buttonEl = document.getElementById("downloadAllBtn");
+        var statusEl = document.getElementById("zipJobStatus");
+        var selectionSummaryEl = document.getElementById("selectionSummary");
+        var matchImagesJsonEl = document.getElementById("matchImagesJson");
+        var selectAllEl = document.getElementById("selectAllPhotos");
+        var pickEls = Array.from(document.querySelectorAll(".thumb-select-checkbox"));
+        if (
+          !form ||
+          !buttonEl ||
+          !statusEl ||
+          !selectionSummaryEl ||
+          !matchImagesJsonEl ||
+          !selectAllEl ||
+          pickEls.length === 0
+        ) {
+          return;
+        }
+
+        function refreshSelectAllState() {
+          var checkedCount = pickEls.filter(function (el) {
+            return el.checked;
+          }).length;
+          selectAllEl.checked = checkedCount === pickEls.length;
+          selectAllEl.indeterminate = checkedCount > 0 && checkedCount < pickEls.length;
+          selectionSummaryEl.textContent = "Selected: " + checkedCount + " / " + pickEls.length;
+        }
+
+        selectAllEl.addEventListener("change", function () {
+          var checked = selectAllEl.checked;
+          pickEls.forEach(function (el) {
+            el.checked = checked;
+          });
+          selectAllEl.indeterminate = false;
+          refreshSelectAllState();
+        });
+
+        pickEls.forEach(function (el) {
+          el.addEventListener("change", function () {
+            refreshSelectAllState();
+          });
+        });
+
+        refreshSelectAllState();
+
+        form.addEventListener("submit", async function (event) {
+          event.preventDefault();
+
+          var allItems;
+          try {
+            allItems = JSON.parse(matchImagesJsonEl.value);
+          } catch (_err) {
+            statusEl.textContent = "Invalid photo list in page payload.";
+            statusEl.classList.add("is-error");
+            return;
+          }
+
+          var selectedItems = pickEls
+            .filter(function (el) {
+              return el.checked;
+            })
+            .map(function (el) {
+              var idx = Number(el.getAttribute("data-photo-index"));
+              return allItems[idx];
+            })
+            .filter(function (item) {
+              return !!item;
+            });
+
+          if (selectedItems.length === 0) {
+            statusEl.textContent = "Please select at least one photo.";
+            statusEl.classList.add("is-error");
+            return;
+          }
+
+          buttonEl.disabled = true;
+          statusEl.textContent = "Starting ZIP job for " + selectedItems.length + " selected photos...";
+          statusEl.classList.remove("is-error");
+
+          try {
+            var startUrl = form.getAttribute("data-start-action") || "download-zip/start";
+            var formData = new FormData(form);
+            formData.set("match_images_json", JSON.stringify(selectedItems));
+            var startRes = await fetch(startUrl, {
+              method: "POST",
+              body: formData,
+              headers: { Accept: "application/json" },
+            });
+            if (!startRes.ok) {
+              var startText = await startRes.text();
+              throw new Error(startText || "Failed to start ZIP job");
+            }
+
+            var payload = await startRes.json();
+            if (!payload.job_id) {
+              throw new Error("ZIP job id missing in server response");
+            }
+
+            var statusUrl = startUrl.replace(/\/start$/, "/status/" + encodeURIComponent(payload.job_id));
+            var downloadUrl = startUrl.replace(/\/start$/, "/file/" + encodeURIComponent(payload.job_id));
+            await pollZipJob(statusUrl, downloadUrl, statusEl, buttonEl);
+          } catch (err) {
+            statusEl.textContent = "ZIP start failed: " + String(err);
+            statusEl.classList.add("is-error");
+            buttonEl.disabled = false;
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>
