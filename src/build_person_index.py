@@ -17,6 +17,7 @@ import json
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+from urllib.request import Request, urlopen
 
 import numpy as np
 
@@ -25,6 +26,11 @@ DEFAULT_COSINE_MIN = 0.50  # two faces are neighbors when cosine similarity >= t
 DEFAULT_MIN_SAMPLES = 3
 PREVIEW_SUFFIX = "=w800-h560-no"
 DOWNLOAD_SUFFIX = "=d"
+# Detection sample width for locating a face box; bbox is stored as fractions so
+# the resolution used here does not affect the final crop.
+FACE_CROP_SAMPLE_WIDTH = 1600
+FACE_CROP_THUMB = "=w512-h512-p"
+FACE_CROP_MATCH_MIN = 0.35  # min cosine to accept the detected face as this person
 
 
 def _preview_url(source_url: str) -> str:
@@ -192,6 +198,9 @@ def build_persons(
                 },
                 "bib_numbers": _top_bibs((faces[i]["image_bibs"] for i in members)),
                 "photos": photos,
+                # Transient: index of the representative face, used by the optional
+                # face-crop pass. Removed before serialization.
+                "_rep_face_index": rep_idx,
             }
         )
 
@@ -205,11 +214,100 @@ def build_persons(
     ]
 
 
+def _download_bytes(url: str, timeout: int = 60) -> bytes:
+    req = Request(url, headers={"User-Agent": "face-bib-photo-matcher/1.0"})
+    with urlopen(req, timeout=timeout) as resp:  # nosec B310
+        return bytes(resp.read())
+
+
+def _fcrop64_hex(left: float, top: float, right: float, bottom: float) -> str:
+    def enc(v: float) -> str:
+        v = min(1.0, max(0.0, v))
+        return format(int(round(v * 0xFFFF)), "04x")
+
+    return "".join(enc(v) for v in (left, top, right, bottom))
+
+
+def _face_crop_url(source_url: str, crop_hex: str) -> str:
+    return f"{source_url}{FACE_CROP_THUMB}-fcrop64=1,{crop_hex}"
+
+
+def compute_face_crops(
+    persons: List[Dict[str, Any]],
+    faces: List[Dict[str, Any]],
+    provider_mode: str = "auto",
+    det_size: int = 640,
+) -> Tuple[int, int]:
+    """Locate each person's face in their representative photo and store a Google
+    fcrop64 region URL so the CDN serves a face-only thumbnail (no local cropping).
+
+    Returns (resolved, attempted). The right face is chosen by matching the
+    detected embeddings against the person's representative embedding, so a group
+    photo yields this person's face rather than the largest/nearest one.
+    """
+    import cv2  # local import: only needed for the optional crop pass
+    from face_scanner import create_insightface_app
+
+    face_app = create_insightface_app(det_size=det_size, provider_mode=provider_mode)
+
+    resolved = 0
+    attempted = 0
+    for person in persons:
+        rep_idx = person.get("_rep_face_index")
+        if rep_idx is None:
+            continue
+        attempted += 1
+        ref = faces[rep_idx]["embedding"].astype(np.float32)
+        ref = ref / (np.linalg.norm(ref) + 1e-12)
+        source_url = person["representative"]["source_url"]
+        try:
+            data = _download_bytes(f"{source_url}=w{FACE_CROP_SAMPLE_WIDTH}")
+            img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+            if img is None:
+                continue
+            h, w = img.shape[:2]
+            detected = face_app.get(img)
+            if not detected:
+                continue
+            best_face = None
+            best_cos = -1.0
+            for det in detected:
+                emb = getattr(det, "normed_embedding", None)
+                if emb is None:
+                    emb = getattr(det, "embedding", None)
+                if emb is None:
+                    continue
+                emb = np.asarray(emb, np.float32)
+                emb = emb / (np.linalg.norm(emb) + 1e-12)
+                cos = float(np.dot(ref, emb))
+                if cos > best_cos:
+                    best_cos = cos
+                    best_face = det
+            if best_face is None or best_cos < FACE_CROP_MATCH_MIN:
+                continue
+            l, t, r, b = [float(v) for v in np.asarray(best_face.bbox, np.float32)[:4]]
+            fw, fh = max(1.0, r - l), max(1.0, b - t)
+            # Head-and-shoulders padding tuned to look like a portrait crop.
+            left = (l - 0.6 * fw) / w
+            top = (t - 0.7 * fh) / h
+            right = (r + 0.6 * fw) / w
+            bottom = (b + 0.9 * fh) / h
+            crop_hex = _fcrop64_hex(left, top, right, bottom)
+            person["representative"]["face_crop"] = crop_hex
+            person["representative"]["face_preview_url"] = _face_crop_url(source_url, crop_hex)
+            resolved += 1
+        except Exception:
+            continue
+    return resolved, attempted
+
+
 def build_person_index(
     report_path: Path,
     det_min: float,
     cosine_min: float,
     min_samples: int,
+    face_crops: bool = False,
+    provider_mode: str = "auto",
 ) -> Dict[str, Any]:
     report = json.loads(report_path.read_text(encoding="utf-8"))
     faces = collect_faces(report, det_min=det_min)
@@ -224,6 +322,15 @@ def build_person_index(
     clustered = int((labels >= 0).sum()) if labels.size else 0
     noise = int((labels < 0).sum()) if labels.size else 0
 
+    crops_resolved = 0
+    if face_crops and persons:
+        crops_resolved, crops_attempted = compute_face_crops(persons, faces, provider_mode=provider_mode)
+        print(f"  face crops: {crops_resolved}/{crops_attempted} resolved")
+
+    # Drop transient fields before serialization.
+    for person in persons:
+        person.pop("_rep_face_index", None)
+
     album = report.get("album", {}) if isinstance(report.get("album"), dict) else {}
     return {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
@@ -235,11 +342,13 @@ def build_person_index(
             "cosine_min": cosine_min,
             "min_samples": min_samples,
             "method": "dbscan_cosine",
+            "face_crops": bool(face_crops),
         },
         "person_count": len(persons),
         "faces_considered": len(faces),
         "faces_clustered": clustered,
         "faces_noise": noise,
+        "face_crops_resolved": crops_resolved,
         "persons": persons,
     }
 
@@ -248,7 +357,14 @@ def persons_sidecar_path(report_path: Path) -> Path:
     return report_path.with_suffix(".persons.json")
 
 
-def run(paths: List[Path], det_min: float, cosine_min: float, min_samples: int) -> int:
+def run(
+    paths: List[Path],
+    det_min: float,
+    cosine_min: float,
+    min_samples: int,
+    face_crops: bool = False,
+    provider_mode: str = "auto",
+) -> int:
     report_files: List[Path] = []
     for path in paths:
         if path.is_dir():
@@ -271,6 +387,8 @@ def run(paths: List[Path], det_min: float, cosine_min: float, min_samples: int) 
                 det_min=det_min,
                 cosine_min=cosine_min,
                 min_samples=min_samples,
+                face_crops=face_crops,
+                provider_mode=provider_mode,
             )
         except Exception as exc:
             print(f"ERROR: failed to process {report_path.name}: {exc}")
@@ -293,6 +411,17 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     parser.add_argument("--det-min", type=float, default=DEFAULT_DET_MIN, help="Min detection score to include a face")
     parser.add_argument("--cosine-min", type=float, default=DEFAULT_COSINE_MIN, help="Min cosine similarity for two faces to be neighbors")
     parser.add_argument("--min-samples", type=int, default=DEFAULT_MIN_SAMPLES, help="DBSCAN core-point neighbor count")
+    parser.add_argument(
+        "--face-crops",
+        action="store_true",
+        help="Locate each person's face (InsightFace + network) and store a Google fcrop64 face-thumbnail URL",
+    )
+    parser.add_argument(
+        "--provider",
+        default="auto",
+        choices=["auto", "cpu", "coreml"],
+        help="InsightFace execution provider for the face-crop pass (default: auto)",
+    )
     return parser.parse_args(list(argv) if argv is not None else None)
 
 
@@ -303,6 +432,8 @@ def main() -> int:
         det_min=args.det_min,
         cosine_min=args.cosine_min,
         min_samples=args.min_samples,
+        face_crops=args.face_crops,
+        provider_mode=args.provider,
     )
 
 

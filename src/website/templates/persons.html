@@ -11,7 +11,7 @@
       <div class="people-header">
         <a class="people-back" href=".">&#8592; Back to races</a>
         <h1 class="people-title">{{ race_label }}</h1>
-        <p class="results-count">{{ person_count }} distinct people</p>
+        <p class="results-count">{{ person_count }} distinct people <span class="ai-guessed">(AI guessed)</span></p>
       </div>
       <hr class="results-divider" />
 
@@ -25,7 +25,7 @@
           href="person?race_label={{ race_label | urlencode }}&amp;pid={{ p.pid | urlencode }}"
         >
           <img
-            src="{{ p.representative.preview_url }}"
+            src="{{ p.representative.face_preview_url or p.representative.preview_url }}"
             alt="Person {{ loop.index }}"
             class="person-image"
             loading="lazy"
