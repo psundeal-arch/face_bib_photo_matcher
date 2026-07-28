@@ -1,7 +1,9 @@
-.idea 
-__pycache__ 
+.idea
+__pycache__
 user
 venv
+.venv
+.DS_Store
 
 test.py 
 google_photos_api_manager.py 

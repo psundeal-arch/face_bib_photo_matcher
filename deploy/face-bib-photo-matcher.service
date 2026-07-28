@@ -1,0 +1,18 @@
+[Unit]
+Description=Face Bib Photo Matcher
+After=network.target
+
+[Service]
+Type=simple
+User=paulsun
+Group=paulsun
+WorkingDirectory=/home/paulsun/face_bib_photo_matcher
+Environment=APP_CONFIG_PATH=/home/paulsun/face_bib_photo_matcher/config.yaml
+Environment=WEBSITE_HOST=127.0.0.1
+Environment=WEBSITE_PORT=8000
+ExecStart=/home/paulsun/face_bib_photo_matcher/.venv/bin/uvicorn --app-dir src/website asgi:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -84,6 +84,31 @@ def _to_str_list(value: object, default: List[str]) -> List[str]:
     return list(default)
 
 
+def check_playwright_ready() -> Optional[str]:
+    """Return an error message when Playwright/Chromium is unusable, else None."""
+    try:
+        from playwright.sync_api import sync_playwright  # type: ignore
+    except Exception:
+        return (
+            "Playwright is required for full album discovery "
+            "(static HTML misses lazy-loaded photos in large albums).\n"
+            "Install with: pip install playwright && python -m playwright install chromium\n"
+            "To knowingly run without it, pass --disable-dynamic-fetch."
+        )
+    try:
+        with sync_playwright() as p:
+            executable = Path(p.chromium.executable_path)
+            if not executable.exists():
+                raise FileNotFoundError(executable)
+    except Exception:
+        return (
+            "Playwright is installed but its Chromium browser is missing.\n"
+            "Install with: python -m playwright install chromium\n"
+            "To knowingly run without it, pass --disable-dynamic-fetch."
+        )
+    return None
+
+
 def fetch_text(url: str) -> str:
     req = Request(
         url,
@@ -923,6 +948,12 @@ def run_pipeline(args: argparse.Namespace) -> int:
     if not is_insightface_available():
         print("InsightFace is required. Install with: pip install insightface onnxruntime")
         return 2
+
+    if args.use_dynamic_fetch:
+        playwright_error = check_playwright_ready()
+        if playwright_error is not None:
+            print(playwright_error)
+            return 2
 
     if args.enable_bib_ocr:
         if not is_rapidocr_available():

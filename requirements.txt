@@ -1,8 +1,12 @@
 # Core ML / CV
 numpy
-opencv-python
+opencv-python-headless
 insightface
 onnxruntime
+
+# Album discovery (required: static HTML misses lazy-loaded photos in large albums)
+# After install, also run: python -m playwright install chromium
+playwright
 
 # OCR
 rapidocr-onnxruntime

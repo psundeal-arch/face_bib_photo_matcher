@@ -40,7 +40,7 @@ This web app lets a user:
 ### Run
 
 ```bash
-pip install flask opencv-python insightface onnxruntime numpy pyyaml
+pip install flask opencv-python-headless insightface onnxruntime numpy pyyaml
 python3 src/website/app.py --host 127.0.0.1 --port 8000
 ```
 
@@ -52,6 +52,51 @@ Input page: `http://127.0.0.1:8000/input`
 ```bash
 pip install uvicorn asgiref
 uvicorn --app-dir src/website asgi:app --host 127.0.0.1 --port 8000 --workers 1
+```
+
+### Deploy to a Linux server
+
+Files added under `deploy/`:
+
+- `deploy/deploy.sh`: sync repo to server, create virtualenv, install Python deps, install `systemd` unit, restart service
+- `deploy/install_server.sh`: headless Linux install path that avoids GUI OpenCV system-library issues
+- `deploy/face-bib-photo-matcher.service`: `systemd` unit for Uvicorn
+- `deploy/nginx-face-bib-photo-matcher.conf`: reverse proxy config for `nginx`
+
+Default assumptions:
+
+- remote host: `69.48.203.86`
+- remote user: `paulsun`
+- app dir: `/home/paulsun/face_bib_photo_matcher`
+- service name: `face-bib-photo-matcher`
+
+Run:
+
+```bash
+chmod +x deploy/deploy.sh
+./deploy/deploy.sh
+```
+
+Override defaults if needed:
+
+```bash
+REMOTE_USER=ubuntu REMOTE_APP_DIR=/srv/face_bib_photo_matcher ./deploy/deploy.sh
+```
+
+After the app service is healthy, install the `nginx` site on the server:
+
+```bash
+install -D -m 0644 deploy/nginx-face-bib-photo-matcher.conf /etc/nginx/sites-available/face-bib-photo-matcher.conf
+ln -sf /etc/nginx/sites-available/face-bib-photo-matcher.conf /etc/nginx/sites-enabled/face-bib-photo-matcher.conf
+nginx -t && systemctl reload nginx
+```
+
+If you do not have working `sudo`, a fallback is to run the app directly as `paulsun` and add a user crontab entry:
+
+```bash
+chmod +x deploy/start_server.sh
+nohup ./deploy/start_server.sh >/dev/null 2>&1 &
+(crontab -l 2>/dev/null; echo '@reboot cd /home/paulsun/face_bib_photo_matcher && ./deploy/start_server.sh') | crontab -
 ```
 
 ### Optional environment variables
@@ -77,14 +122,17 @@ Downloads one or more public Google Photos shared albums, scans images with Insi
 ### Install dependencies
 
 ```bash
-pip install opencv-python insightface onnxruntime rapidocr-onnxruntime pillow pillow-heif numpy
+pip install opencv-python-headless insightface onnxruntime rapidocr-onnxruntime pillow pillow-heif numpy
 ```
 
 Notes:
 - HEIC/HEIF scanning is supported when `pillow-heif` is installed.
 - If HEIC decode still fails in your environment, convert files to JPG/PNG as a fallback.
 
-For large Google Photos albums, install Playwright so dynamic lazy-loaded photos can be discovered:
+Playwright is REQUIRED for album discovery (static HTML extraction misses lazy-loaded
+photos in large albums — an album can silently lose most of its photos without it).
+The pipeline refuses to start when Playwright/Chromium is missing, unless
+`--disable-dynamic-fetch` is passed explicitly:
 
 ```bash
 pip install playwright
@@ -203,7 +251,7 @@ This script takes a person's `name` and a `photo_path`, runs InsightFace, and up
 ### Install dependencies
 
 ```bash
-pip install opencv-python insightface onnxruntime numpy
+pip install opencv-python-headless insightface onnxruntime numpy
 ```
 
 ### Command
