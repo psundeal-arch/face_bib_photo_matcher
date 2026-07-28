@@ -856,6 +856,7 @@ def persons_page() -> Any:
         persons=persons,
         race_label=resolved_race,
         person_count=len(persons),
+        cover_image_url=resolve_race_cover_image_url(resolved_race),
     )
 
 
@@ -871,6 +872,7 @@ def person_page() -> Any:
         "person.html",
         person=person,
         race_label=resolved_race,
+        cover_image_url=resolve_race_cover_image_url(resolved_race),
     )
 
 

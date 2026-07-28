@@ -6,17 +6,21 @@
     <title>People &mdash; {{ race_label }}</title>
     <link rel="stylesheet" href="static/styles.css" />
   </head>
-  <body class="results-page">
-    <main class="results-wrap">
+  <body class="people-theme">
+    {% if cover_image_url %}
+    <div class="people-bg" style="background-image: url('{{ cover_image_url }}');"></div>
+    {% endif %}
+    <div class="people-bg-overlay"></div>
+
+    <main class="people-wrap">
       <div class="people-header">
         <a class="people-back" href=".">&#8592; Back to races</a>
         <h1 class="people-title">{{ race_label }}</h1>
-        <p class="results-count">{{ person_count }} distinct people <span class="ai-guessed">(AI guessed)</span></p>
+        <p class="people-count">{{ person_count }} distinct people <span class="ai-guessed">(AI guessed)</span></p>
       </div>
-      <hr class="results-divider" />
 
       {% if person_count == 0 %}
-      <p class="results-empty">No people index available for this race yet.</p>
+      <p class="people-empty">No people index available for this race yet.</p>
       {% else %}
       <section class="people-grid">
         {% for p in persons %}
@@ -24,13 +28,21 @@
           class="person-card"
           href="person?race_label={{ race_label | urlencode }}&amp;pid={{ p.pid | urlencode }}"
         >
-          <img
-            src="{{ p.representative.face_preview_url or p.representative.preview_url }}"
-            alt="Person {{ loop.index }}"
-            class="person-image"
-            loading="lazy"
-            onerror="this.classList.add('is-broken')"
-          />
+          <div class="person-frame">
+            <img
+              src="{{ p.representative.face_preview_url or p.representative.preview_url }}"
+              alt="Person {{ loop.index }}"
+              class="person-image"
+              loading="lazy"
+              onerror="this.classList.add('is-broken')"
+            />
+            <div class="person-hover">
+              <span class="person-hover-cta">View photos &#8594;</span>
+              {% if p.bib_numbers and p.bib_numbers[0] %}
+              <span class="person-hover-bib">#{{ p.bib_numbers[0].number }}</span>
+              {% endif %}
+            </div>
+          </div>
           <div class="person-meta">
             {{ p.photo_count }} photo{{ '' if p.photo_count == 1 else 's' }}
           </div>

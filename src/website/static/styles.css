@@ -304,28 +304,92 @@ pre {
   font-size: 28px;
 }
 
-/* People gallery */
+/* ---- People gallery: dark & vibrant theme ---- */
+:root {
+  --su-red: #e2231a;
+  --su-red-soft: rgba(226, 35, 26, 0.55);
+  --people-ink: #f4f6f8;
+  --people-muted: #aab2bd;
+}
+
+.people-theme {
+  min-height: 100vh;
+  background: #101216;
+  color: var(--people-ink);
+}
+
+/* Fixed cover image behind a dark gradient overlay for legibility. */
+.people-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  filter: saturate(1.05);
+}
+
+.people-bg-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(226, 35, 26, 0.22), transparent 60%),
+    linear-gradient(180deg, rgba(16, 18, 22, 0.82) 0%, rgba(16, 18, 22, 0.9) 45%, rgba(12, 13, 16, 0.96) 100%);
+}
+
+.people-wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 40px 20px 64px;
+}
+
 .people-header {
-  margin-bottom: 6px;
+  margin-bottom: 26px;
 }
 
 .people-back {
   display: inline-block;
-  margin-bottom: 10px;
-  font-size: 18px;
-  font-weight: 600;
-  color: #2f4d79;
+  margin-bottom: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--people-muted);
   text-decoration: none;
+  transition: color 0.15s ease;
 }
 
 .people-back:hover {
-  text-decoration: underline;
+  color: var(--su-red);
 }
 
 .people-title {
-  margin: 0 0 6px;
-  font-size: 40px;
-  line-height: 1.05;
+  margin: 0 0 8px;
+  font-size: clamp(34px, 6vw, 58px);
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.55);
+}
+
+.people-count {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--people-muted);
+}
+
+.ai-guessed {
+  font-size: 0.72em;
+  font-weight: 600;
+  color: #7f8794;
+  vertical-align: middle;
+}
+
+.people-empty {
+  font-size: 22px;
+  color: var(--people-muted);
 }
 
 .race-cover-people-link {
@@ -341,17 +405,10 @@ pre {
   text-decoration: underline;
 }
 
-.ai-guessed {
-  font-size: 0.6em;
-  font-weight: 600;
-  color: #7a7f87;
-  vertical-align: middle;
-}
-
 .people-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 22px;
 }
 
 .person-card {
@@ -360,26 +417,138 @@ pre {
   color: inherit;
 }
 
+.person-frame {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #1a1d23;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+}
+
+.person-card:hover .person-frame {
+  transform: translateY(-4px) scale(1.02);
+  border-color: var(--su-red-soft);
+  box-shadow: 0 0 0 1px var(--su-red-soft), 0 14px 34px rgba(226, 35, 26, 0.4);
+}
+
 .person-image {
   display: block;
   width: 100%;
   aspect-ratio: 1 / 1;
   object-fit: cover;
-  border-radius: 10px;
-  background: #d8d8d8;
-  border: 1px solid #c4c4c4;
+  background: #23262d;
 }
 
 .person-image.is-broken {
-  min-height: 150px;
+  min-height: 160px;
+}
+
+.person-hover {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 12px 14px;
+  background: linear-gradient(180deg, transparent 40%, rgba(11, 12, 15, 0.85) 100%);
+  opacity: 0;
+  transition: opacity 0.22s ease;
+}
+
+.person-card:hover .person-hover {
+  opacity: 1;
+}
+
+.person-hover-cta {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: #fff;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.6);
+}
+
+.person-hover-bib {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--su-red);
+  padding: 2px 10px;
+  border-radius: 999px;
 }
 
 .person-meta {
-  margin-top: 6px;
+  margin-top: 9px;
   text-align: center;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
-  color: #3b3f46;
+  color: var(--people-muted);
+}
+
+/* Person detail page reuses the dark theme; restyle the existing controls. */
+.people-theme .results-toolbar {
+  align-items: center;
+}
+
+.people-theme .results-download-all-btn {
+  background: var(--su-red);
+  box-shadow: 0 6px 18px rgba(226, 35, 26, 0.4);
+}
+
+.people-theme .results-download-all-btn:hover {
+  filter: brightness(1.08);
+}
+
+.people-theme .results-select-all,
+.people-theme .results-selection-status {
+  color: var(--people-ink);
+}
+
+.people-theme .results-zip-status {
+  color: #d6b7b4;
+}
+
+.people-theme .thumb-image,
+.people-theme .thumb-fallback {
+  border-radius: 12px;
+}
+
+.people-theme .thumb-image {
+  background: #23262d;
+}
+
+.people-theme .people-count {
+  margin-bottom: 0;
+}
+
+@media (max-width: 620px) {
+  .people-wrap {
+    padding: 28px 14px 44px;
+  }
+
+  .people-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .person-hover-cta {
+    font-size: 13px;
+  }
+
+  .people-bg {
+    background-attachment: scroll;
+  }
+}
+
+.people-theme .thumb-match-meta {
+  color: var(--people-muted);
+}
+
+.people-theme .thumb-download {
+  background: var(--su-red);
 }
 
 .thumb-grid {

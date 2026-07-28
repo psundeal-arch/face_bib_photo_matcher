@@ -6,19 +6,24 @@
     <title>Person &mdash; {{ race_label }}</title>
     <link rel="stylesheet" href="static/styles.css" />
   </head>
-  <body class="results-page">
-    <main class="results-wrap">
+  <body class="people-theme">
+    {% if cover_image_url %}
+    <div class="people-bg" style="background-image: url('{{ cover_image_url }}');"></div>
+    {% endif %}
+    <div class="people-bg-overlay"></div>
+
+    <main class="people-wrap">
       {% if not person %}
       <div class="people-header">
         <a class="people-back" href="persons?race_label={{ race_label | urlencode }}">&#8592; Back to people</a>
         <h1 class="people-title">Person not found</h1>
       </div>
-      <p class="results-empty">This person is no longer available. It may have been re-indexed.</p>
+      <p class="people-empty">This person is no longer available. It may have been re-indexed.</p>
       {% else %}
       <div class="people-header">
         <a class="people-back" href="persons?race_label={{ race_label | urlencode }}">&#8592; Back to people</a>
         <div class="results-toolbar">
-          <p class="results-count">{{ person.photos|length }} photo{{ '' if person.photos|length == 1 else 's' }} of this person</p>
+          <p class="people-count">{{ person.photos|length }} photo{{ '' if person.photos|length == 1 else 's' }} of this person</p>
           {% if person.photos|length > 0 %}
           <label class="results-select-all">
             <input type="checkbox" id="selectAllPhotos" checked />
