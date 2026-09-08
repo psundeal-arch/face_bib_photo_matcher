@@ -60,9 +60,11 @@
               <span class="person-hover-bib">#{{ p.bib.number }} &middot; {{ p.bib.support }} photo{{ '' if p.bib.support == 1 else 's' }}</span>
               {% endif %}
             </div>
+            {% if p.bib %}
+            <span class="person-bib-overlay{% if p.bib.support >= 2 %} is-confirmed{% endif %}" title="Bib read under this face in {{ p.bib.support }} photo(s)">#{{ p.bib.number }}</span>
+            {% endif %}
           </div>
           <div class="person-meta">
-            {% if p.bib %}<span class="person-bib{% if p.bib.support >= 2 %} is-confirmed{% endif %}" title="Bib read under this face in {{ p.bib.support }} photo(s)">#{{ p.bib.number }}</span>{% endif %}
             {{ p.photo_count }} photo{{ '' if p.photo_count == 1 else 's' }}
           </div>
         </a>
