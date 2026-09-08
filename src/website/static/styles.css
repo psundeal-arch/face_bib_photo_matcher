@@ -801,3 +801,47 @@ pre {
     font-size: 15px;
   }
 }
+
+/* Person bib (voted from per-face torso OCR) + bib search */
+.people-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.people-search input {
+  width: min(320px, 100%);
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--people-ink);
+  font-size: 15px;
+  outline: none;
+}
+
+.people-search input:focus {
+  border-color: var(--su-red-soft);
+  box-shadow: 0 0 0 3px rgba(226, 35, 26, 0.18);
+}
+
+.people-search-count {
+  font-size: 14px;
+  color: var(--people-muted);
+}
+
+.person-bib {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #fff;
+  background: rgba(226, 35, 26, 0.55);
+}
+
+.person-bib.is-confirmed {
+  background: var(--su-red);
+}

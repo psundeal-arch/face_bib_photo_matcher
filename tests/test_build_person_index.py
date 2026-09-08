@@ -102,5 +102,29 @@ class TestPhotoUrls(unittest.TestCase):
         self.assertFalse(pu.supports_face_crop(r))
 
 
+class TestVoteBib(unittest.TestCase):
+    def _f(self, url, bibs):
+        return {"source_url": url, "near_bibs": [{"number": n, "confidence": c} for n, c in bibs]}
+
+    def test_support_across_photos_beats_single_confident_read(self) -> None:
+        faces = [
+            self._f("https://x/1", [("682", 0.6)]),
+            self._f("https://x/2", [("682", 0.7)]),
+            self._f("https://x/3", [("999", 0.99)]),  # one very confident misread
+        ]
+        best, cands = bpi._vote_bib(faces)
+        self.assertEqual(best["number"], "682")
+        self.assertEqual(best["support"], 2)
+        self.assertEqual([c["number"] for c in cands], ["682", "999"])
+
+    def test_same_photo_counts_once_for_support(self) -> None:
+        faces = [self._f("https://x/1", [("123", 0.9), ("123", 0.9)])]
+        best, _ = bpi._vote_bib(faces)
+        self.assertEqual(best["support"], 1)
+
+    def test_no_reads_returns_none(self) -> None:
+        self.assertEqual(bpi._vote_bib([self._f("https://x/1", [])]), (None, []))
+
+
 if __name__ == "__main__":
     unittest.main()

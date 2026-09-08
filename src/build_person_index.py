@@ -69,6 +69,7 @@ def collect_faces(report: Dict[str, Any], det_min: float) -> List[Dict[str, Any]
                 continue
             if not isinstance(det_score, (int, float)) or float(det_score) < det_min:
                 continue
+            near_bibs = face.get("bib_numbers_near_face", [])
             faces.append(
                 {
                     "embedding": np.asarray(emb, dtype=np.float32),
@@ -76,9 +77,45 @@ def collect_faces(report: Dict[str, Any], det_min: float) -> List[Dict[str, Any]
                     "source_url": source_url.strip(),
                     "image_name": str(image_name),
                     "image_bibs": image_bibs,
+                    # Numbers OCR'd from the torso crop directly under THIS face.
+                    "near_bibs": near_bibs if isinstance(near_bibs, list) else [],
                 }
             )
     return faces
+
+
+def _vote_bib(member_faces: List[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Pick a person's bib by voting the per-face torso-crop reads across photos.
+
+    Ranks by number of distinct photos the number was read under this person's
+    face (support), then by summed OCR confidence. Returns (best, candidates).
+    A bib confirmed in >=2 photos is far more reliable than a single read.
+    """
+    score: Dict[str, float] = {}
+    photos: Dict[str, set] = {}
+    for face in member_faces:
+        for item in face.get("near_bibs", []):
+            if not isinstance(item, dict) or item.get("number") is None:
+                continue
+            number = str(item["number"])
+            try:
+                conf = float(item.get("confidence", 0) or 0)
+            except Exception:
+                conf = 0.0
+            score[number] = score.get(number, 0.0) + conf
+            photos.setdefault(number, set()).add(face["source_url"])
+    if not score:
+        return None, []
+    ranked = sorted(score, key=lambda n: (len(photos[n]), score[n]), reverse=True)
+    candidates = [
+        {
+            "number": n,
+            "support": len(photos[n]),
+            "confidence": round(score[n] / max(1, len(photos[n])), 2),
+        }
+        for n in ranked[:3]
+    ]
+    return candidates[0], candidates
 
 
 def dbscan_cosine(
@@ -198,7 +235,11 @@ def build_persons(
                     "download_url": _download_url(rep["source_url"]),
                     "det_score": round(rep["det_score"], 4),
                 },
+                # Legacy: every number seen anywhere in this person's photos (noisy).
                 "bib_numbers": _top_bibs((faces[i]["image_bibs"] for i in members)),
+                # Voted: the number read under THIS person's own face across photos.
+                "bib": _vote_bib([faces[i] for i in members])[0],
+                "bib_candidates": _vote_bib([faces[i] for i in members])[1],
                 "photos": photos,
                 # Transient: index of the representative face, used by the optional
                 # face-crop pass. Removed before serialization.
@@ -413,7 +454,7 @@ def run(
     for path in paths:
         if path.is_dir():
             report_files.extend(
-                sorted(p for p in path.glob("*.json") if not p.name.endswith(".persons.json"))
+                sorted(p for p in path.glob("*.json") if not p.name.endswith((".persons.json", ".urls.json")))
             )
         elif path.is_file():
             report_files.append(path)
