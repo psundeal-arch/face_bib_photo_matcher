@@ -76,8 +76,8 @@
               </p>
             </div>
           </div>
-          <a href="{{ item.download_url }}" target="_blank" rel="noopener noreferrer" class="thumb-download">
-            &#8681; {{ item.image_name }}
+          <a href="{{ item.download_url }}" target="_blank" rel="noopener noreferrer" class="thumb-download" title="{{ item.image_name }}">
+            &#8681; {{ item.image_name | shortname }}
           </a>
         </article>
         {% endfor %}

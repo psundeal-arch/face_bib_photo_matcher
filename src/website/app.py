@@ -42,6 +42,28 @@ STATIC_IMAGES_DIR = APP_DIR / "static" / "images"
 
 app = Flask(__name__, template_folder=str(APP_DIR / "templates"), static_folder=str(APP_DIR / "static"))
 
+
+@app.template_filter("shortname")
+def shortname(value: Any) -> str:
+    """Display-friendly short photo name (does not affect the download URL).
+
+    RunSignup names like ``race_147339_335324_<uuid>.jpg`` collapse to the first
+    UUID segment; other long stems are middle-truncated; short names pass through.
+    """
+    base = str(value or "").rsplit("/", 1)[-1]
+    stem, dot, ext = base.rpartition(".")
+    if not dot:
+        stem, ext = base, ""
+    m = re.match(r"race_\d+_\d+_([0-9a-fA-F]{8})", stem)
+    if m:
+        short = m.group(1)
+    elif len(stem) > 18:
+        short = f"{stem[:8]}…{stem[-5:]}"
+    else:
+        short = stem
+    return f"{short}.{ext}" if ext else short
+
+
 _face_app_lock = threading.Lock()
 _face_app: Optional[object] = None
 _report_cache_lock = threading.Lock()
