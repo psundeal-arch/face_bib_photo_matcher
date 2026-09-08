@@ -21,6 +21,8 @@ from urllib.request import Request, urlopen
 
 import numpy as np
 
+from photo_urls import photo_download_url, photo_preview_url, supports_face_crop
+
 DEFAULT_DET_MIN = 0.6
 DEFAULT_COSINE_MIN = 0.50  # two faces are neighbors when cosine similarity >= this
 DEFAULT_MIN_SAMPLES = 3
@@ -34,11 +36,11 @@ FACE_CROP_MATCH_MIN = 0.35  # min cosine to accept the detected face as this per
 
 
 def _preview_url(source_url: str) -> str:
-    return f"{source_url}{PREVIEW_SUFFIX}"
+    return photo_preview_url(source_url)
 
 
 def _download_url(source_url: str) -> str:
-    return f"{source_url}{DOWNLOAD_SUFFIX}"
+    return photo_download_url(source_url)
 
 
 def collect_faces(report: Dict[str, Any], det_min: float) -> List[Dict[str, Any]]:
@@ -256,10 +258,12 @@ def compute_face_crops(
         rep_idx = person.get("_rep_face_index")
         if rep_idx is None:
             continue
+        source_url = person["representative"]["source_url"]
+        if not supports_face_crop(source_url):
+            continue  # e.g. RunSignup S3 URLs have no CDN region-crop
         attempted += 1
         ref = faces[rep_idx]["embedding"].astype(np.float32)
         ref = ref / (np.linalg.norm(ref) + 1e-12)
-        source_url = person["representative"]["source_url"]
         try:
             data = _download_bytes(f"{source_url}=w{FACE_CROP_SAMPLE_WIDTH}")
             img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)

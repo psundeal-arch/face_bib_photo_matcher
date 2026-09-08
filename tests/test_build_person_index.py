@@ -61,7 +61,9 @@ class TestBuildPersons(unittest.TestCase):
         self.assertEqual(person["photo_count"], 2)  # p1 deduped
         # Representative comes from the highest det_score face (0.9 -> p2).
         self.assertEqual(person["representative"]["image_name"], "p2.jpg")
-        self.assertTrue(person["representative"]["preview_url"].endswith("=w800-h560-no"))
+        # Unknown host: preview/download URLs pass through verbatim.
+        self.assertEqual(person["representative"]["preview_url"], "https://x/p2")
+
 
     def test_persons_sorted_by_photo_count(self) -> None:
         faces = [
@@ -80,6 +82,24 @@ class TestBuildPersons(unittest.TestCase):
         faces = [self._face([1, 0], 0.9, "https://x/a1")]
         labels = np.array([-1])
         self.assertEqual(bpi.build_persons(faces, labels), [])
+
+
+class TestPhotoUrls(unittest.TestCase):
+    def test_google_urls_get_suffixes(self) -> None:
+        import photo_urls as pu
+
+        g = "https://lh3.googleusercontent.com/pw/ABC123"
+        self.assertEqual(pu.photo_preview_url(g), g + "=w800-h560-no")
+        self.assertEqual(pu.photo_download_url(g), g + "=d")
+        self.assertTrue(pu.supports_face_crop(g))
+
+    def test_runsignup_urls_swap_size_prefix(self) -> None:
+        import photo_urls as pu
+
+        r = "https://rsu-photos-v2-v2prod.s3.amazonaws.com/large_v3/race_1_2_abc.jpg"
+        self.assertIn("/thumbs_v3/", pu.photo_preview_url(r))
+        self.assertEqual(pu.photo_download_url(r), r)  # large_v3 is the download size
+        self.assertFalse(pu.supports_face_crop(r))
 
 
 if __name__ == "__main__":

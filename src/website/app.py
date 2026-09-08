@@ -26,6 +26,7 @@ from flask import Flask, jsonify, render_template, request, send_file
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app_config import get_section, load_yaml_config
+from photo_urls import photo_download_url, photo_preview_url
 
 try:
     from insightface.app import FaceAnalysis
@@ -549,8 +550,8 @@ def build_match_images(matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "source_url": source_url,
                 "album_title": m.get("album_title") or "",
                 "album_url": m.get("album_url") or "",
-                "preview_url": f"{source_url}=w800-h560-no",
-                "download_url": f"{source_url}=d",
+                "preview_url": photo_preview_url(source_url),
+                "download_url": photo_download_url(source_url),
                 "_bib_match": False,
                 "_hash_match": False,
                 "_embedding_match": False,

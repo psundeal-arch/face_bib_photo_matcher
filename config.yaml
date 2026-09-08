@@ -31,6 +31,7 @@ website:
     "2026 SU Mother's Day 5k": reports_2026_su_mothersday_5k
     "2026 Boston Marathon": reports_2026_boston_marathon
     "2026 SU Summer Picnic": reports_2026_su_summer_picnic
+    "Redmond Harvest Half (Start Line demo)": reports_redmond_startline
   # Optional: race cover images shown on website home cover page.
   # Value can be:
   # - a file name under src/website/static/images (e.g. "boston-2026.jpg")
