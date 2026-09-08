@@ -259,13 +259,16 @@ def compute_face_crops(
         if rep_idx is None:
             continue
         source_url = person["representative"]["source_url"]
-        if not supports_face_crop(source_url):
-            continue  # e.g. RunSignup S3 URLs have no CDN region-crop
         attempted += 1
         ref = faces[rep_idx]["embedding"].astype(np.float32)
         ref = ref / (np.linalg.norm(ref) + 1e-12)
         try:
-            data = _download_bytes(f"{source_url}=w{FACE_CROP_SAMPLE_WIDTH}")
+            # Google can transform via URL; other hosts serve a fixed image.
+            if supports_face_crop(source_url):
+                det_url = f"{source_url}=w{FACE_CROP_SAMPLE_WIDTH}"
+            else:
+                det_url = photo_download_url(source_url)  # e.g. RunSignup large_v3
+            data = _download_bytes(det_url)
             img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
             if img is None:
                 continue
@@ -291,18 +294,55 @@ def compute_face_crops(
                 continue
             l, t, r, b = [float(v) for v in np.asarray(best_face.bbox, np.float32)[:4]]
             fw, fh = max(1.0, r - l), max(1.0, b - t)
-            # Head-and-shoulders padding tuned to look like a portrait crop.
-            left = (l - 0.6 * fw) / w
-            top = (t - 0.7 * fh) / h
-            right = (r + 0.6 * fw) / w
-            bottom = (b + 0.9 * fh) / h
-            crop_hex = _fcrop64_hex(left, top, right, bottom)
-            person["representative"]["face_crop"] = crop_hex
-            person["representative"]["face_preview_url"] = _face_crop_url(source_url, crop_hex)
+
+            if supports_face_crop(source_url):
+                # Google fcrop64: server crops to this rectangle (fractions).
+                left = (l - 0.6 * fw) / w
+                top = (t - 0.7 * fh) / h
+                right = (r + 0.6 * fw) / w
+                bottom = (b + 0.9 * fh) / h
+                crop_hex = _fcrop64_hex(left, top, right, bottom)
+                person["representative"]["face_crop"] = crop_hex
+                person["representative"]["face_preview_url"] = _face_crop_url(source_url, crop_hex)
+            else:
+                # CSS crop: store how to position the fixed-size image in a square
+                # tile so only the face shows (cropping happens in the browser).
+                # Display the larger image so small/far faces stay crisp when zoomed.
+                person["representative"]["face_box"] = _css_face_box(
+                    l, t, r, b, w, h, photo_download_url(source_url)
+                )
             resolved += 1
         except Exception:
             continue
     return resolved, attempted
+
+
+def _css_face_box(
+    l: float, t: float, r: float, b: float, w: int, h: int, src: str
+) -> Dict[str, Any]:
+    """Positioning for a square head-and-shoulders crop rendered with CSS.
+
+    The image is placed absolutely inside a square tile: `width_pct` scales it so
+    the crop square fills the tile width; `left_pct`/`top_pct` shift it (percent of
+    the tile) so the crop square's top-left sits at the tile origin. Values are
+    resolution-independent, so a smaller display image can be used than the one
+    detected on.
+    """
+    fw, fh = max(1.0, r - l), max(1.0, b - t)
+    cx, cy = (l + r) / 2.0, (t + b) / 2.0
+    side = max(fw, fh) * 2.4  # head + shoulders
+    # Keep the square inside the image where it fits.
+    half = side / 2.0
+    if side <= w:
+        cx = min(max(cx, half), w - half)
+    if side <= h:
+        cy = min(max(cy, half), h - half)
+    return {
+        "src": src,
+        "width_pct": round(w / side * 100.0, 3),
+        "left_pct": round(-((cx - half) / side) * 100.0, 3),
+        "top_pct": round(-((cy - half) / side) * 100.0, 3),
+    }
 
 
 def build_person_index(

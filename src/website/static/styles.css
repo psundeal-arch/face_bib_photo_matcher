@@ -445,6 +445,22 @@ pre {
   min-height: 160px;
 }
 
+/* Browser-side face crop (for sources without a CDN region-crop, e.g. RunSignup):
+   the image is scaled/shifted inside a square tile so only the face shows. */
+.person-face-crop {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  background: #23262d;
+}
+
+.person-face-crop img {
+  position: absolute;
+  height: auto;
+  max-width: none;
+}
+
 .person-hover {
   position: absolute;
   inset: 0;

@@ -29,6 +29,16 @@
           href="person?race_label={{ race_label | urlencode }}&amp;pid={{ p.pid | urlencode }}"
         >
           <div class="person-frame">
+            {% if p.representative.face_box %}
+            <div class="person-face-crop">
+              <img
+                src="{{ p.representative.face_box.src }}"
+                alt="Person {{ loop.index }}"
+                loading="lazy"
+                style="width: {{ p.representative.face_box.width_pct }}%; left: {{ p.representative.face_box.left_pct }}%; top: {{ p.representative.face_box.top_pct }}%;"
+              />
+            </div>
+            {% else %}
             <img
               src="{{ p.representative.face_preview_url or p.representative.preview_url }}"
               alt="Person {{ loop.index }}"
@@ -36,6 +46,7 @@
               loading="lazy"
               onerror="this.classList.add('is-broken')"
             />
+            {% endif %}
             <div class="person-hover">
               <span class="person-hover-cta">View photos &#8594;</span>
               {% if p.bib_numbers and p.bib_numbers[0] %}
